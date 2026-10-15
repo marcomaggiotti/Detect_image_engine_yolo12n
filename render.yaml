@@ -6,8 +6,9 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    # The service uses ~600 MB of RAM with the default YOLO12n model, which
-    # is more than the 512 MB of the free/starter instances. Standard = 2 GB.
+    # The service used ~1.2 GB of RAM with the default YOLO12n model in a
+    # local test, more than the 512 MB of the free/starter instances.
+    # Standard = 2 GB.
     plan: standard
     region: oregon
     healthCheckPath: /health

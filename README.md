@@ -206,7 +206,7 @@ Each process loads one model and runs one inference at a time. Scale with more r
 
 The repo includes a Render Blueprint, [`render.yaml`](render.yaml). In the Render dashboard choose **New → Blueprint** and select this repository. Render builds the Dockerfile and checks `/health`. The container listens on the `$PORT` that Render provides.
 
-- **Plan:** `standard` (2 GB). The service uses about 600 MB of RAM with YOLO12n, so the 512 MB free/starter instances would run out of memory.
+- **Plan:** `standard` (2 GB). The service used about 1.2 GB of RAM with YOLO12n in a local test, so the 512 MB free/starter instances would run out of memory.
 - **Region:** `oregon`. Change `region` in `render.yaml` to deploy elsewhere.
 - **Fine-tuned model:** Render's filesystem is reset on every deploy. Either copy `best.pt` into the image, or uncomment the `disk` block, upload the file there and set `DETECT_MODEL_WEIGHTS=/var/data/models/best.pt`.
 
