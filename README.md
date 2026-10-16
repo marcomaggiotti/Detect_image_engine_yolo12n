@@ -8,7 +8,7 @@ It follows the design of [`detect_image_engine`](https://github.com/marcomaggiot
 - **Other objects:** people, dogs and the rest of COCO's 80 classes are a request parameter or a config change away. No code changes.
 - **Swappable model:** the weights come from configuration. A fine-tuned YOLO12 `best.pt` (or YOLO11, RT-DETR, a custom backend) is a drop-in replacement.
 - **Your own cats by name:** upload a few photos of each of your cats, then `POST /v1/identify` tells you which of them is in a picture. No training needed.
-- **Web interface:** a React app at `/` to check photos (from a phone too) and manage your cats, served by the same service.
+- **Chat-style web interface:** a cat assistant at `/` (React). Send it photos, from a phone too, and it shows each step, answers, and learns your cats when you say “this is Luna”. Served by the same service.
 - **Small in production:** the Docker image serves ONNX exports with ONNX Runtime, without PyTorch. It peaks at ~200 MB of RAM, so it runs on Render's $7/month Starter plan.
 
 ```
@@ -42,10 +42,14 @@ The first start downloads `yolo12n.pt` (~5 MB). Interactive docs: http://localho
 
 ## Web interface
 
-Open the service's address in a browser (http://localhost:8000/ locally, your Render URL in production).
+Open the service's address in a browser (http://localhost:8000/ locally, your Render URL in production). It's a conversation with a cat assistant:
 
-- **Check a photo:** choose, take (on a phone), drop or paste a photo. The answer comes with a box around each cat: “It's Luna!”, “Yes, 2 cats!”, or “A cat, but not one of yours”.
-- **My cats:** add a cat with a name and a few photos, add more photos later, or remove it. Photos with no cat or several cats are listed with the reason. The admin token (`DETECT_ADMIN_TOKEN`) is asked once and kept in that browser.
+- **Send a photo** (choose, take one on a phone, drop or paste it). The assistant shows each step as it works (preparing the photo, looking for cats, comparing them with your cats), then answers: “It's Luna!”, “Yes, 2 cats!”, or “A cat, but not one of yours”, with a box around each cat.
+- **Teach it your cats:** send photos of one cat with “this is Luna” (or “save as Luna”, “these are Luna”). After checking a photo it also offers buttons: “It's Luna”, “It's a new cat…”, “Add to Luna's photos”.
+- **Ask:** “show my cats”, “forget Luna” (it asks before forgetting), “help”.
+- **Admin token:** when a change needs `DETECT_ADMIN_TOKEN`, the assistant asks for it in the conversation, keeps it in that browser and carries on with what you asked.
+
+The assistant understands photos and these few requests by simple pattern matching ([`frontend/src/agent/intent.ts`](frontend/src/agent/intent.ts)). There is no language model: nothing extra to pay or configure.
 
 Large photos are shrunk to 1,600 px in the browser before upload, which keeps uploads from phones fast. HEIC photos are sent as they are: the server reads them, but browsers other than Safari can't show their preview.
 

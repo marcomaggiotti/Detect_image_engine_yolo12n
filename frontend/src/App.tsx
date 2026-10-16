@@ -1,14 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
-import { listCats, type CatsResponse } from "./api";
-import { CheckPhoto } from "./components/CheckPhoto";
-import { MyCats } from "./components/MyCats";
+import { useState } from "react";
+import { useAgent } from "./agent/useAgent";
+import { Chat } from "./components/Chat";
+import { displayName, listNames } from "./results";
 
-type Tab = "check" | "cats";
 const TOKEN_KEY = "cat-detector.admin-token";
-
-function tabFromHash(): Tab {
-  return window.location.hash === "#cats" ? "cats" : "check";
-}
 
 // The token is a per-device convenience; storage may be unavailable (private mode).
 function loadToken(): string {
@@ -24,78 +19,50 @@ function saveToken(token: string) {
     if (token) window.localStorage.setItem(TOKEN_KEY, token);
     else window.localStorage.removeItem(TOKEN_KEY);
   } catch {
-    // keep it for this visit only
+    // kept for this visit only
   }
 }
 
 export function App() {
-  const [tab, setTab] = useState<Tab>(tabFromHash);
-  // undefined: loading; null: the server can't tell cats apart.
-  const [cats, setCats] = useState<CatsResponse | null | undefined>(undefined);
-  const [loadError, setLoadError] = useState("");
   const [token, setTokenState] = useState(loadToken);
-
-  const refresh = useCallback(async () => {
-    try {
-      setCats(await listCats());
-      setLoadError("");
-    } catch (error) {
-      setLoadError((error as Error).message);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    const onHash = () => setTab(tabFromHash());
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
-  }, []);
-
-  function setToken(value: string) {
+  const setToken = (value: string) => {
     setTokenState(value);
     saveToken(value);
-  }
-
-  const count = cats?.cats.length ?? 0;
+  };
+  const agent = useAgent({ token, setToken });
+  const known = agent.cats?.cats.map((c) => displayName(c.name)) ?? [];
 
   return (
     <div className="app">
       <header className="header">
-        <h1 className="header__title">
-          <span aria-hidden="true">🐱</span> Cat Detector
-        </h1>
-        <nav className="tabs" aria-label="Sections">
-          <a href="#check" className={`tabs__tab${tab === "check" ? " tabs__tab--active" : ""}`} aria-current={tab === "check" ? "page" : undefined}>
-            Check a photo
-          </a>
-          <a href="#cats" className={`tabs__tab${tab === "cats" ? " tabs__tab--active" : ""}`} aria-current={tab === "cats" ? "page" : undefined}>
-            My cats{count > 0 && <span className="badge">{count}</span>}
-          </a>
+        <div className="header__who">
+          <span className="header__avatar" aria-hidden="true">
+            🐱
+          </span>
+          <div>
+            <h1 className="header__title">Cat assistant</h1>
+            <p className="header__status">
+              <span className="status-dot" aria-hidden="true" />
+              {agent.cats === undefined
+                ? "Connecting…"
+                : known.length
+                  ? `Knows ${listNames(known)}`
+                  : agent.cats === null
+                    ? "Finds cats in photos"
+                    : "Finds cats · knows none of yours yet"}
+            </p>
+          </div>
+        </div>
+        <nav className="header__links small">
+          {token && (
+            <button type="button" className="link" onClick={() => setToken("")} title="Forget the admin token saved on this device">
+              Forget token
+            </button>
+          )}
+          <a href="/docs">API</a>
         </nav>
       </header>
-
-      <main className="main">
-        {loadError && (
-          <p className="notice notice--error" role="alert">
-            {loadError}{" "}
-            <button type="button" className="link" onClick={refresh}>
-              Try again
-            </button>
-          </p>
-        )}
-        {tab === "check" ? (
-          <CheckPhoto cats={cats} />
-        ) : (
-          <MyCats cats={cats} refresh={refresh} token={token} setToken={setToken} />
-        )}
-      </main>
-
-      <footer className="footer muted small">
-        YOLO12n finds the cats; your photos tell them apart. <a href="/docs">API</a>
-      </footer>
+      <Chat agent={agent} />
     </div>
   );
 }
