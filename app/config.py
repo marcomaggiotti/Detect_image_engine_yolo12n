@@ -18,12 +18,14 @@ class Settings(BaseSettings):
     )
 
     # --- Model selection -------------------------------------------------
-    # Built-in name ("ultralytics") or a custom detector given as
-    # "package.module:ClassName".
+    # Built-in name ("ultralytics", "onnxruntime") or a custom detector given
+    # as "package.module:ClassName". "onnxruntime" serves an exported .onnx
+    # model without PyTorch (see training/export.py); the Docker image uses it.
     backend: str = "ultralytics"
-    # Weights to load: a .pt/.onnx/... file or a known Ultralytics model name.
+    # Weights to load. ultralytics: a .pt/.onnx/... file or a known model name.
+    # onnxruntime: a .onnx file exported by Ultralytics.
     # Defaults to YOLO12 nano pretrained on COCO (80 classes, "cat" included).
-    # Point it at a fine-tuned "best.pt" to serve your own model.
+    # Point it at a fine-tuned "best.pt" (or its ONNX export) to serve your own model.
     model_weights: str = "yolo12n.pt"
     # Architecture hint: "yolo" (default) or "rtdetr".
     model_arch: str | None = None
@@ -34,6 +36,13 @@ class Settings(BaseSettings):
     model_version: str | None = None
     # "cpu", "cuda", "cuda:0", "mps"... None lets the backend decide.
     device: str | None = None
+    # CPU threads used by one inference. None lets the runtime decide (all
+    # cores of the host, which oversubscribes small cloud instances).
+    threads: int | None = Field(None, gt=0)
+    # onnxruntime backend only: execution providers in priority order, comma
+    # separated, e.g. "CUDAExecutionProvider,CPUExecutionProvider". Empty means
+    # derived from DETECT_DEVICE.
+    onnx_providers: Annotated[list[str], NoDecode] = []
 
     # --- Detection defaults ----------------------------------------------
     # Classes reported when the request does not ask for specific ones.
@@ -53,7 +62,7 @@ class Settings(BaseSettings):
     # does not pay for lazy initialisation.
     warmup: bool = True
 
-    @field_validator("target_classes", mode="before")
+    @field_validator("target_classes", "onnx_providers", mode="before")
     @classmethod
     def _split_classes(cls, value: object) -> object:
         if isinstance(value, str):

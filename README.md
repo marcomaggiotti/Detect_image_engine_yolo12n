@@ -7,23 +7,25 @@ It follows the design of [`detect_image_engine`](https://github.com/marcomaggiot
 - **Cats by default:** `POST /v1/cat` answers yes/no, `POST /v1/detect` returns the boxes.
 - **Other objects:** people, dogs and the rest of COCO's 80 classes are a request parameter or a config change away. No code changes.
 - **Swappable model:** the weights come from configuration. A fine-tuned YOLO12 `best.pt` (or YOLO11, RT-DETR, a custom backend) is a drop-in replacement.
+- **Small in production:** the Docker image serves an ONNX export of YOLO12n with ONNX Runtime, without PyTorch. It peaks at ~150 MB of RAM, so it runs on Render's $7/month Starter plan.
 
 ```
-     POST /v1/cat  ·  POST /v1/detect (image)
-                    │
-             ┌──────▼──────┐   validates classes, size limits,
-             │   FastAPI   │   EXIF orientation, RGB conversion
-             └──────┬──────┘
-             ┌──────▼──────┐
-             │  Detection  │   class selection, thresholds,
-             │   Service   │   counts, timing, thread safety
-             └──────┬──────┘
-                    │  Detector interface (app/detectors/base.py)
-          ┌─────────┴──────────────┐
-┌─────────▼─────────┐  ┌───────────▼──────────┐
-│ ultralytics       │  │ your backend         │
-│ YOLO12n (default) │  │ "pkg.module:Class"   │
-└───────────────────┘  └──────────────────────┘
+                    POST /v1/cat  ·  POST /v1/detect (image)
+                                   │
+                            ┌──────▼──────┐   validates classes, size limits,
+                            │   FastAPI   │   EXIF orientation, RGB conversion
+                            └──────┬──────┘
+                            ┌──────▼──────┐
+                            │  Detection  │   class selection, thresholds,
+                            │   Service   │   counts, timing, thread safety
+                            └──────┬──────┘
+                                   │  Detector interface (app/detectors/base.py)
+           ┌───────────────────────┼───────────────────────┐
+┌──────────▼─────────┐  ┌──────────▼─────────┐  ┌──────────▼─────────┐
+│ ultralytics        │  │ onnxruntime        │  │ your backend       │
+│ yolo12n.pt         │  │ yolo12n.onnx       │  │ "pkg.module:Class" │
+│ local, training    │  │ Docker, Render     │  │                    │
+└────────────────────┘  └────────────────────┘  └────────────────────┘
 ```
 
 ## Quick start
@@ -101,16 +103,18 @@ Everything is set with environment variables (or a `.env` file). See [`.env.exam
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `DETECT_BACKEND` | `ultralytics` | `ultralytics` or a custom `package.module:ClassName` |
-| `DETECT_MODEL_WEIGHTS` | `yolo12n.pt` | Model name or path to (fine-tuned) weights |
-| `DETECT_MODEL_ARCH` | – | `yolo` (default) or `rtdetr` |
+| `DETECT_BACKEND` | `ultralytics` (`onnxruntime` in Docker) | `ultralytics`, `onnxruntime`, or a custom `package.module:ClassName` |
+| `DETECT_MODEL_WEIGHTS` | `yolo12n.pt` (`/models/yolo12n.onnx` in Docker) | Model name or path to (fine-tuned) weights; a `.onnx` file for `onnxruntime` |
+| `DETECT_MODEL_ARCH` | – | ultralytics only: `yolo` (default) or `rtdetr` |
 | `DETECT_MODEL_LABELS` | – | Label file (one name per line, line N = class N) overriding the names in the weights |
 | `DETECT_MODEL_VERSION` | – | Tag echoed in responses, so you know which model answered |
 | `DETECT_DEVICE` | auto | `cpu`, `cuda`, `cuda:0`, `mps` |
+| `DETECT_THREADS` | all host cores | CPU threads per inference. Set it on small cloud instances (`1` on Render Starter) |
+| `DETECT_ONNX_PROVIDERS` | from `DETECT_DEVICE` | onnxruntime: execution providers in priority order, e.g. `CUDAExecutionProvider,CPUExecutionProvider` |
 | `DETECT_TARGET_CLASSES` | `cat` | Default classes for `/v1/detect`, comma separated (`*` = all) |
 | `DETECT_CONFIDENCE_THRESHOLD` | `0.25` | Default minimum score |
 | `DETECT_IOU_THRESHOLD` | `0.45` | NMS IoU |
-| `DETECT_IMAGE_SIZE` | `640` | Inference size |
+| `DETECT_IMAGE_SIZE` | `640` | Inference size. With onnxruntime it only applies to `--dynamic` exports |
 | `DETECT_MAX_DETECTIONS` | `100` | Max boxes per image |
 | `DETECT_MAX_UPLOAD_BYTES` | `10485760` | Upload size limit |
 | `DETECT_MAX_IMAGE_PIXELS` | `40000000` | Rejects decompression bombs before decoding |
@@ -128,7 +132,7 @@ curl -F image=@photo.jpg "http://localhost:8000/v1/detect?classes=cat,dog,person
 
 or change the service default: `DETECT_TARGET_CLASSES=cat,dog,person`.
 
-**2. Better accuracy: a bigger YOLO12.** `DETECT_MODEL_WEIGHTS=yolo12s.pt` (or `yolo12m.pt`, `yolo12l.pt`, `yolo12x.pt`). Slower and heavier, but more accurate.
+**2. Better accuracy: a bigger YOLO12.** `DETECT_MODEL_WEIGHTS=yolo12s.pt` (or `yolo12m.pt`, `yolo12l.pt`, `yolo12x.pt`). Slower and heavier, but more accurate. For the Docker image: `docker build --build-arg MODEL=yolo12s.pt .`
 
 **3. New classes or your own data: fine-tune** YOLO12n, e.g. for a specific cat, a breed, or rabbits. See next section.
 
@@ -155,9 +159,36 @@ or change the service default: `DETECT_TARGET_CLASSES=cat,dog,person`.
    uvicorn app.main:app
    ```
 
-Fine-tuned Ultralytics weights store their own class names, so no label file is needed.
+Fine-tuned Ultralytics weights store their own class names, so no label file is needed. To serve the result from the Docker image, export it to ONNX (`--export onnx`, or see below).
 
 > ⚠️ Fine-tuning **replaces** the model's class list with your dataset's classes. Keep `cat` in the dataset (with labelled examples) or `/v1/cat` will answer 400.
+
+## Serving with ONNX Runtime (no PyTorch)
+
+The `onnxruntime` backend runs a YOLO model exported to ONNX with only ONNX Runtime, NumPy and Pillow. It gives the same detections as the ultralytics backend (checked on the test photos: same scores, boxes within a pixel) and needs a fraction of the memory: about 150 MB instead of about 1.2 GB.
+
+```bash
+pip install -e ".[export]"                      # PyTorch + Ultralytics, only to export
+python -m training.export --weights yolo12n.pt --dynamic --output models/yolo12n.onnx
+
+pip install -e ".[onnx]"                        # what production needs
+DETECT_BACKEND=onnxruntime DETECT_MODEL_WEIGHTS=models/yolo12n.onnx uvicorn app.main:app
+```
+
+`training/export.py` options:
+
+| Option | Effect |
+| --- | --- |
+| `--dynamic` | Recommended. Input size is chosen at runtime with `DETECT_IMAGE_SIZE`, and non-square photos are padded less, so they run faster. Without it the model always runs at the export size and ignores `DETECT_IMAGE_SIZE` (a warning is logged). |
+| `--imgsz 640` | Export (and default) input size. |
+| `--nms` | Puts duplicate-box removal inside the graph. The backend reads both output layouts. |
+| `--half` | FP16 weights, for GPU serving. Exporting it needs a GPU. |
+| `--opset N`, `--no-simplify` | ONNX opset version; skip graph simplification. |
+| `--weights best.pt` | Any Ultralytics YOLO detection model (YOLOv8 to YOLO12, fine-tuned or not). RT-DETR exports aren't supported by this backend. |
+
+Smaller `DETECT_IMAGE_SIZE` values are faster, but don't go too low for this service: at 320, YOLO12n called a dog photo a cat with a 0.85 score, which it got right at 640.
+
+For a GPU, install `onnxruntime-gpu` instead of `onnxruntime` and set `DETECT_DEVICE=cuda` (or `DETECT_ONNX_PROVIDERS`).
 
 ## Your own backend
 
@@ -190,15 +221,15 @@ DETECT_BACKEND=mypkg.detector:MyDetector uvicorn app.main:app
 
 ```bash
 docker build -t detect-image-engine-yolo12n .
-docker run -p 8000:8000 detect-image-engine-yolo12n
+docker run -p 8000:8000 -e DETECT_THREADS=1 detect-image-engine-yolo12n
 
-# serve a fine-tuned model
+# serve a fine-tuned model (exported with: python -m training.export --weights best.pt --dynamic)
 docker run -p 8000:8000 -v "$PWD/runs/pets-v1/weights:/models/custom:ro" \
-  -e DETECT_MODEL_WEIGHTS=/models/custom/best.pt -e DETECT_MODEL_VERSION=pets-v1 \
+  -e DETECT_MODEL_WEIGHTS=/models/custom/best.onnx -e DETECT_MODEL_VERSION=pets-v1 \
   detect-image-engine-yolo12n
 ```
 
-The image bakes in `yolo12n.pt` and uses CPU-only PyTorch. For GPU, pass `--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu124` and run with `--gpus all -e DETECT_DEVICE=cuda`.
+The build has two stages. The first installs CPU PyTorch and Ultralytics only to export YOLO12n to ONNX (`--build-arg MODEL=yolo12s.pt` picks another model). The final image contains ONNX Runtime and the `.onnx` file, without PyTorch (486 MB). Limited to 512 MB of RAM and half a CPU, it peaked at 149 MB and answered in about 0.2 s per image.
 
 Each process loads one model and runs one inference at a time. Scale with more replicas (or `uvicorn --workers N`; each worker loads its own copy of the model).
 
@@ -206,19 +237,20 @@ Each process loads one model and runs one inference at a time. Scale with more r
 
 The repo includes a Render Blueprint, [`render.yaml`](render.yaml). In the Render dashboard choose **New → Blueprint** and select this repository. Render builds the Dockerfile and checks `/health`. The container listens on the `$PORT` that Render provides.
 
-- **Plan:** `standard` (2 GB). The service used about 1.2 GB of RAM with YOLO12n in a local test, so the 512 MB free/starter instances would run out of memory.
+- **Plan:** `starter` (512 MB, 0.5 CPU). The ONNX Runtime image peaks at about 150 MB, and `DETECT_THREADS=1` matches the half CPU. Expect about 0.2 s per image, a few images per second per instance. For more, add instances or move to `standard` (1 CPU) with `DETECT_THREADS=2`.
+- **Free plan:** memory also fits, but with a tenth of a CPU each image takes over a second, and the service sleeps when idle, so the next request waits for it to start.
 - **Region:** `oregon`. Change `region` in `render.yaml` to deploy elsewhere.
-- **Fine-tuned model:** Render's filesystem is reset on every deploy. Either copy `best.pt` into the image, or uncomment the `disk` block, upload the file there and set `DETECT_MODEL_WEIGHTS=/var/data/models/best.pt`.
+- **Fine-tuned model:** Render's filesystem is reset on every deploy. Export it to ONNX, then either copy the `.onnx` into the image, or uncomment the `disk` block, upload the file there and set `DETECT_MODEL_WEIGHTS=/var/data/models/best.onnx`.
 
 ## Development
 
 ```bash
-pip install -e ".[ultralytics,dev]"
+pip install -e ".[ultralytics,onnx,export,dev]"
 pytest
 ruff check . && ruff format --check .
 ```
 
-The API tests use a fake detector, so they need no ML framework. The backend smoke test builds a randomly initialised YOLO12n offline and is skipped when ultralytics isn't installed.
+The API tests use a fake detector, so they need no ML framework. The ONNX Runtime tests build tiny ONNX models with known outputs (they need `onnx` and `onnxruntime`). The ultralytics smoke test builds a randomly initialised YOLO12n offline. Tests whose framework isn't installed are skipped.
 
 ## Licensing note
 

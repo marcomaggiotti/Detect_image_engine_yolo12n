@@ -10,6 +10,7 @@ from app.detectors.base import Detector, DetectorConfig
 # actually used needs to be installed.
 BUILTIN_BACKENDS: dict[str, str] = {
     "ultralytics": "app.detectors.ultralytics_backend:UltralyticsDetector",
+    "onnxruntime": "app.detectors.onnxruntime_backend:OnnxRuntimeDetector",
 }
 
 

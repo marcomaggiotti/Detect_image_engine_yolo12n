@@ -6,27 +6,32 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    # The service used ~1.2 GB of RAM with the default YOLO12n model in a
-    # local test, more than the 512 MB of the free/starter instances.
-    # Standard = 2 GB.
-    plan: standard
+    # The image serves YOLO12n with ONNX Runtime (no PyTorch). In a local
+    # test limited to 512 MB and 0.5 CPU it peaked at ~150 MB and answered
+    # in ~0.2 s per image, so Starter (512 MB, 0.5 CPU) is enough. For more
+    # throughput use standard (1 CPU) and set DETECT_THREADS=1 or 2, or add
+    # instances.
+    plan: starter
     region: oregon
     healthCheckPath: /health
     envVars:
-      - key: DETECT_BACKEND
-        value: ultralytics
       - key: DETECT_TARGET_CLASSES
         value: cat
       - key: DETECT_CONFIDENCE_THRESHOLD
         value: "0.25"
+      # One thread matches Starter's half CPU. Without it ONNX Runtime starts
+      # one thread per host core and gets throttled.
+      - key: DETECT_THREADS
+        value: "1"
       - key: DETECT_MAX_UPLOAD_BYTES
         value: "10485760"
       # DETECT_MODEL_WEIGHTS defaults to the model baked into the image
-      # (/models/yolo12n.pt). To serve a fine-tuned model, either copy it
-      # into the image or uncomment the disk below, upload best.pt to it
-      # and set DETECT_MODEL_WEIGHTS=/var/data/models/best.pt.
+      # (/models/yolo12n.onnx). To serve a fine-tuned model, export it with
+      # `python -m training.export --weights best.pt --dynamic`, then either
+      # copy the .onnx into the image or uncomment the disk below, upload it
+      # there and set DETECT_MODEL_WEIGHTS=/var/data/models/best.onnx.
       # - key: DETECT_MODEL_WEIGHTS
-      #   value: /var/data/models/best.pt
+      #   value: /var/data/models/best.onnx
       # - key: DETECT_MODEL_VERSION
       #   value: pets-v1
     # disk:

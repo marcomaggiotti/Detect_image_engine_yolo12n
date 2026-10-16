@@ -34,6 +34,11 @@ class DetectorConfig:
     iou_threshold: float = 0.45
     image_size: int = 640
     max_detections: int = 100
+    # CPU threads per inference; None lets the runtime decide.
+    threads: int | None = None
+    # onnxruntime execution providers in priority order; None derives them
+    # from ``device``.
+    providers: tuple[str, ...] | None = None
 
 
 class Detector(ABC):

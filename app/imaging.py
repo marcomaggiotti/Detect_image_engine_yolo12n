@@ -6,6 +6,13 @@ import io
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+try:  # HEIC/HEIF photos (iPhone default), when pi-heif is installed
+    from pi_heif import register_heif_opener
+except ImportError:
+    pass
+else:
+    register_heif_opener()
+
 
 class InvalidImageError(ValueError):
     pass

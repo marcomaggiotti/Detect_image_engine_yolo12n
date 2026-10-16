@@ -26,6 +26,8 @@ def build_detector(settings: Settings) -> Detector:
         iou_threshold=settings.iou_threshold,
         image_size=settings.image_size,
         max_detections=settings.max_detections,
+        threads=settings.threads,
+        providers=tuple(settings.onnx_providers) or None,
     )
     return create_detector(settings.backend, config)
 

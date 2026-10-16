@@ -39,7 +39,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--export",
         default=None,
-        help="Also export the best model, e.g. onnx, openvino, engine",
+        help="Also export the best model, e.g. onnx (dynamic input size, served by the "
+        "onnxruntime backend), openvino, engine",
     )
     return p.parse_args(argv)
 
@@ -76,10 +77,13 @@ def main(argv: list[str] | None = None) -> Path:
 
     weights = best
     if args.export:
-        weights = Path(tuned.export(format=args.export, imgsz=args.imgsz))
+        weights = Path(
+            tuned.export(format=args.export, imgsz=args.imgsz, dynamic=args.export == "onnx")
+        )
 
     print("\nServe it with:")
-    print("  DETECT_BACKEND=ultralytics")
+    onnxruntime = weights.suffix == ".onnx" and not args.rtdetr  # RT-DETR ONNX: ultralytics only
+    print(f"  DETECT_BACKEND={'onnxruntime' if onnxruntime else 'ultralytics'}")
     print(f"  DETECT_MODEL_WEIGHTS={weights}")
     if args.rtdetr:
         print("  DETECT_MODEL_ARCH=rtdetr")
