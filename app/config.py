@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -53,6 +53,19 @@ class Settings(BaseSettings):
     iou_threshold: float = Field(0.45, ge=0.0, le=1.0)
     image_size: int = Field(640, gt=0)
     max_detections: int = Field(100, gt=0)
+
+    # --- Telling your cats apart ------------------------------------------
+    # Embedder exported by training/export_embedder.py. Unset disables the
+    # /v1/identify and /v1/cats endpoints.
+    embedder_weights: str | None = None
+    # Where the photos of your cats are kept. Unset keeps them in memory only
+    # (lost on restart); on Render, point it at a persistent disk.
+    cats_dir: str | None = None
+    # Minimum similarity (0-1) to name a cat; below it the cat is "unknown".
+    identify_threshold: float = Field(0.8, ge=0.0, le=1.0)
+    # Required as "Authorization: Bearer <token>" to add or delete cats.
+    # Unset lets anyone who can reach the service change them.
+    admin_token: SecretStr | None = None
 
     # --- Input limits ------------------------------------------------------
     max_upload_bytes: int = Field(10 * 1024 * 1024, gt=0)

@@ -11,9 +11,9 @@ from app.main import create_app
 from tests.fakes import FakeDetector
 
 
-def make_image(size=(80, 60), fmt="PNG", **save_kwargs) -> bytes:
+def make_image(size=(80, 60), fmt="PNG", color=(120, 80, 40), **save_kwargs) -> bytes:
     buf = io.BytesIO()
-    Image.new("RGB", size, (120, 80, 40)).save(buf, format=fmt, **save_kwargs)
+    Image.new("RGB", size, color).save(buf, format=fmt, **save_kwargs)
     return buf.getvalue()
 
 

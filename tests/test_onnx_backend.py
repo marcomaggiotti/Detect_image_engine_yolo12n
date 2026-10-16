@@ -9,7 +9,8 @@ import pytest
 from PIL import Image
 
 from app.detectors import DetectorConfig, create_detector
-from app.detectors.onnxruntime_backend import _nms, _resize_bilinear
+from app.detectors.onnxruntime_backend import _nms
+from app.imaging import resize_bilinear
 
 onnx = pytest.importorskip("onnx")
 pytest.importorskip("onnxruntime")
@@ -158,9 +159,9 @@ def test_nms_suppresses_overlaps_only():
 
 def test_resize_matches_opencv_bilinear():
     pixels = np.array([[[0] * 3, [100] * 3], [[200] * 3, [50] * 3]], dtype=np.uint8)
-    up = _resize_bilinear(pixels, 4, 4)[..., 0]
+    up = resize_bilinear(pixels, 4, 4)[..., 0]
     # cv2.resize(pixels, (4, 4), interpolation=cv2.INTER_LINEAR); OpenCV's
     # fixed-point arithmetic can round one level differently.
     opencv = [[0, 25, 75, 100], [50, 59, 78, 88], [150, 128, 84, 63], [200, 162, 87, 50]]
     assert np.abs(up - opencv).max() <= 1
-    assert _resize_bilinear(pixels, 2, 2).tolist() == pixels.astype(float).tolist()
+    assert resize_bilinear(pixels, 2, 2).tolist() == pixels.astype(float).tolist()

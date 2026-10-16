@@ -28,6 +28,7 @@ import numpy as np
 from PIL import Image
 
 from app.detectors.base import Detection, Detector, DetectorConfig, load_labels
+from app.imaging import resize_bilinear
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +158,7 @@ class OnnxRuntimeDetector(Detector):
             in_width = math.ceil(new_width / self._stride) * self._stride
             in_height = math.ceil(new_height / self._stride) * self._stride
 
-        pixels = _resize_bilinear(np.asarray(image), new_width, new_height)
+        pixels = resize_bilinear(np.asarray(image), new_width, new_height)
         pad_x, pad_y = (in_width - new_width) // 2, (in_height - new_height) // 2
         canvas = np.full((in_height, in_width, 3), _PAD_VALUE, dtype=np.float32)
         canvas[pad_y : pad_y + new_height, pad_x : pad_x + new_width] = pixels
@@ -176,25 +177,6 @@ def _providers_for(device: str | None, ort) -> list:
     elif device == "mps" and "CoreMLExecutionProvider" in available:
         return ["CoreMLExecutionProvider", "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
-
-
-def _resize_bilinear(pixels: np.ndarray, width: int, height: int) -> np.ndarray:
-    """Resize an HxWx3 uint8 array like OpenCV's INTER_LINEAR, which the
-    models were trained with. Pillow's bilinear filter smooths when shrinking,
-    which shifts scores enough to create false positives on large photos."""
-    if pixels.shape[:2] == (height, width):
-        return pixels.astype(np.float32)
-    y0, y1, wy = _sample_coords(pixels.shape[0], height)
-    x0, x1, wx = _sample_coords(pixels.shape[1], width)
-    rows = pixels[y0] * (1 - wy)[:, None, None] + pixels[y1] * wy[:, None, None]
-    out = rows[:, x0] * (1 - wx)[None, :, None] + rows[:, x1] * wx[None, :, None]
-    return out.round()  # OpenCV returns uint8
-
-
-def _sample_coords(size: int, new_size: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    src = ((np.arange(new_size) + 0.5) * (size / new_size) - 0.5).clip(0, size - 1)
-    low = np.floor(src).astype(int)
-    return low, np.minimum(low + 1, size - 1), (src - low).astype(np.float32)
 
 
 def _xywh_to_xyxy(xywh: np.ndarray) -> np.ndarray:

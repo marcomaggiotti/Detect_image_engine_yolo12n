@@ -61,3 +61,45 @@ class ModelInfo(ModelRef):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+class IdentifiedCat(BaseModel):
+    name: str | None = Field(
+        description="Which of your cats this is; null when it doesn't look enough like any of them."
+    )
+    closest: str = Field(description="The most similar of your cats, even below the threshold.")
+    similarity: float = Field(description="Similarity to the closest cat (0-1).")
+    confidence: float = Field(description="Detection score of this cat.")
+    box: Box
+
+
+class IdentifyResponse(BaseModel):
+    model: ModelRef
+    image: ImageInfo
+    names: list[str] = Field(description="Your cats found in the image.")
+    cats: list[IdentifiedCat]
+    inference_ms: float
+
+
+class KnownCat(BaseModel):
+    name: str
+    photos: int
+
+
+class CatsResponse(BaseModel):
+    cats: list[KnownCat]
+    threshold: float = Field(description="Minimum similarity to name a cat.")
+    persistent: bool = Field(description="False when photos are lost on restart.")
+
+
+class RejectedPhoto(BaseModel):
+    file: str
+    reason: str
+
+
+class EnrollResponse(BaseModel):
+    name: str
+    added: int
+    duplicates: int = Field(description="Photos already known for this cat, skipped.")
+    rejected: list[RejectedPhoto]
+    photos: int = Field(description="Photos of this cat in total.")

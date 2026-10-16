@@ -6,11 +6,11 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    # The image serves YOLO12n with ONNX Runtime (no PyTorch). In a local
-    # test limited to 512 MB and 0.5 CPU it peaked at ~150 MB and answered
-    # in ~0.2 s per image, so Starter (512 MB, 0.5 CPU) is enough. For more
-    # throughput use standard (1 CPU) and set DETECT_THREADS=1 or 2, or add
-    # instances.
+    # The image serves YOLO12n and the cat embedder with ONNX Runtime (no
+    # PyTorch). In a local test limited to 512 MB and 0.5 CPU it peaked at
+    # ~200 MB, answering /v1/cat in ~0.2 s and /v1/identify in ~0.4 s, so
+    # Starter (512 MB, 0.5 CPU) is enough. For more throughput use standard
+    # (1 CPU) with DETECT_THREADS=2.
     plan: starter
     region: oregon
     healthCheckPath: /health
@@ -25,16 +25,26 @@ services:
         value: "1"
       - key: DETECT_MAX_UPLOAD_BYTES
         value: "10485760"
+      # Needed (as "Authorization: Bearer <token>") to add or delete your
+      # cats. Render generates it: copy it from the dashboard's Environment tab.
+      - key: DETECT_ADMIN_TOKEN
+        generateValue: true
+      # Minimum similarity to name one of your cats (see README).
+      - key: DETECT_IDENTIFY_THRESHOLD
+        value: "0.8"
       # DETECT_MODEL_WEIGHTS defaults to the model baked into the image
       # (/models/yolo12n.onnx). To serve a fine-tuned model, export it with
       # `python -m training.export --weights best.pt --dynamic`, then either
-      # copy the .onnx into the image or uncomment the disk below, upload it
-      # there and set DETECT_MODEL_WEIGHTS=/var/data/models/best.onnx.
+      # copy the .onnx into the image or upload it to the disk below and set
+      # DETECT_MODEL_WEIGHTS=/var/data/models/best.onnx.
       # - key: DETECT_MODEL_WEIGHTS
       #   value: /var/data/models/best.onnx
       # - key: DETECT_MODEL_VERSION
       #   value: pets-v1
-    # disk:
-    #   name: models
-    #   mountPath: /var/data
-    #   sizeGB: 1
+    # Keeps the photos of your cats (/var/data/cats) across deploys and
+    # restarts; without it they are lost on every deploy. 1 GB holds
+    # thousands of photos.
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1

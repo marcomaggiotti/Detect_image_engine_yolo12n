@@ -12,6 +12,7 @@ from app import __doc__ as description
 from app.api.routes import router
 from app.config import Settings, get_settings
 from app.detectors import Detector, DetectorConfig, create_detector
+from app.identify import CatGallery, Embedder
 from app.service import DetectionService
 
 logger = logging.getLogger("detect_image_engine_yolo12n")
@@ -32,8 +33,28 @@ def build_detector(settings: Settings) -> Detector:
     return create_detector(settings.backend, config)
 
 
-def create_app(settings: Settings | None = None, detector: Detector | None = None) -> FastAPI:
-    """Build the app. ``detector`` can be injected (tests, embedding)."""
+def build_gallery(settings: Settings, embedder: Embedder | None = None) -> CatGallery | None:
+    if embedder is None:
+        if not settings.embedder_weights:
+            return None
+        embedder = Embedder(
+            settings.embedder_weights,
+            threads=settings.threads,
+            providers=tuple(settings.onnx_providers) or None,
+        )
+    if not settings.cats_dir:
+        logger.warning("DETECT_CATS_DIR is not set: photos of your cats are lost on restart")
+    if settings.admin_token is None:
+        logger.warning("DETECT_ADMIN_TOKEN is not set: anyone can add or delete cats")
+    return CatGallery(embedder, root=settings.cats_dir, threshold=settings.identify_threshold)
+
+
+def create_app(
+    settings: Settings | None = None,
+    detector: Detector | None = None,
+    embedder: Embedder | None = None,
+) -> FastAPI:
+    """Build the app. ``detector`` and ``embedder`` can be injected (tests, embedding)."""
     settings = settings or get_settings()
 
     @asynccontextmanager
@@ -45,6 +66,7 @@ def create_app(settings: Settings | None = None, detector: Detector | None = Non
             default_classes=settings.target_classes,
             confidence_threshold=settings.confidence_threshold,
             max_image_pixels=settings.max_image_pixels,
+            gallery=build_gallery(settings, embedder),
         )
         if settings.warmup:
             model.warmup()
@@ -64,7 +86,29 @@ def create_app(settings: Settings | None = None, detector: Detector | None = Non
         lifespan=lifespan,
     )
     app.include_router(router)
+    _show_file_pickers_for_file_lists(app)
     return app
+
+
+def _show_file_pickers_for_file_lists(app: FastAPI) -> None:
+    """Make /docs offer file pickers for multi-file fields.
+
+    FastAPI describes uploaded files with ``contentMediaType``; Swagger UI only
+    turns that into a file picker for a single file, and shows text boxes for a
+    list of files unless its items also say ``format: binary``.
+    """
+    generate = app.openapi
+
+    def openapi() -> dict:
+        schema = generate()
+        for component in schema.get("components", {}).get("schemas", {}).values():
+            for field in component.get("properties", {}).values():
+                items = field.get("items", {})
+                if field.get("type") == "array" and "contentMediaType" in items:
+                    items["format"] = "binary"
+        return schema
+
+    app.openapi = openapi
 
 
 def _default_app() -> FastAPI:
