@@ -8,6 +8,7 @@ It follows the design of [`detect_image_engine`](https://github.com/marcomaggiot
 - **Other objects:** people, dogs and the rest of COCO's 80 classes are a request parameter or a config change away. No code changes.
 - **Swappable model:** the weights come from configuration. A fine-tuned YOLO12 `best.pt` (or YOLO11, RT-DETR, a custom backend) is a drop-in replacement.
 - **Your own cats by name:** upload a few photos of each of your cats, then `POST /v1/identify` tells you which of them is in a picture. No training needed.
+- **Web interface:** a React app at `/` to check photos (from a phone too) and manage your cats, served by the same service.
 - **Small in production:** the Docker image serves ONNX exports with ONNX Runtime, without PyTorch. It peaks at ~200 MB of RAM, so it runs on Render's $7/month Starter plan.
 
 ```
@@ -38,6 +39,24 @@ uvicorn app.main:app --reload
 ```
 
 The first start downloads `yolo12n.pt` (~5 MB). Interactive docs: http://localhost:8000/docs
+
+## Web interface
+
+Open the service's address in a browser (http://localhost:8000/ locally, your Render URL in production).
+
+- **Check a photo:** choose, take (on a phone), drop or paste a photo. The answer comes with a box around each cat: “It's Luna!”, “Yes, 2 cats!”, or “A cat, but not one of yours”.
+- **My cats:** add a cat with a name and a few photos, add more photos later, or remove it. Photos with no cat or several cats are listed with the reason. The admin token (`DETECT_ADMIN_TOKEN`) is asked once and kept in that browser.
+
+Large photos are shrunk to 1,600 px in the browser before upload, which keeps uploads from phones fast. HEIC photos are sent as they are: the server reads them, but browsers other than Safari can't show their preview.
+
+The app lives in [`frontend/`](frontend) (React 18, TypeScript, Vite). The Docker image builds it; to run it locally:
+
+```bash
+cd frontend
+npm install
+npm run build        # into app/web, served by uvicorn at "/"
+# or, while editing: npm run dev  (http://localhost:5173, API calls go to uvicorn on :8000)
+```
 
 ### Is there a cat?
 
@@ -164,6 +183,7 @@ Everything is set with environment variables (or a `.env` file). See [`.env.exam
 | `DETECT_EMBEDDER_WEIGHTS` | – (`/models/cat-embedder.onnx` in Docker) | Embedder from `training/export_embedder.py`. Unset disables `/v1/identify` and `/v1/cats` |
 | `DETECT_CATS_DIR` | – (`/var/data/cats` in Docker) | Where photos of your cats are kept. Unset: memory only, lost on restart |
 | `DETECT_IDENTIFY_THRESHOLD` | `0.8` | Minimum similarity to name one of your cats |
+| `DETECT_WEB_DIR` | `app/web` (`/app/web` in Docker) | Built web interface served at `/`. Without one, `/` returns 404 and the API works as before |
 | `DETECT_ADMIN_TOKEN` | – | Required to add or delete cats. Unset: anyone who can reach the service can (a warning is logged) |
 
 At startup the service checks that the model can detect every class in `DETECT_TARGET_CLASSES`. If it can't, startup fails with a clear error instead of returning empty results.
@@ -285,7 +305,7 @@ docker run -p 8000:8000 -v "$PWD/runs/pets-v1/weights:/models/custom:ro" \
   detect-image-engine-yolo12n
 ```
 
-The build has two stages. The first installs CPU PyTorch and Ultralytics only to export YOLO12n and the embedder to ONNX (`--build-arg MODEL=yolo12s.pt` or `EMBEDDER=yolo11s-cls.pt` pick others). The final image contains ONNX Runtime and the two `.onnx` files, without PyTorch (498 MB). The `cat-photos` volume keeps your cats' photos across restarts.
+The build has three stages. The first builds the web interface with Node. The second installs CPU PyTorch and Ultralytics only to export YOLO12n and the embedder to ONNX (`--build-arg MODEL=yolo12s.pt` or `EMBEDDER=yolo11s-cls.pt` pick others). The final image contains ONNX Runtime, the two `.onnx` files and the built web interface, without Node or PyTorch (498 MB). The `cat-photos` volume keeps your cats' photos across restarts.
 
 Limited to 512 MB of RAM and half a CPU, the container peaked at 200 MB. `/v1/cat` took about 0.2 s per image and `/v1/identify` about 0.4 s (it runs both models).
 
@@ -309,6 +329,8 @@ The repo includes a Render Blueprint, [`render.yaml`](render.yaml). In the Rende
 pip install -e ".[ultralytics,onnx,export,dev]"
 pytest
 ruff check . && ruff format --check .
+
+cd frontend && npm install && npm test && npm run typecheck
 ```
 
 The API tests use a fake detector and a fake embedder, so they need no ML framework. The ONNX Runtime tests build tiny ONNX models with known outputs (they need `onnx` and `onnxruntime`). The ultralytics smoke test builds a randomly initialised YOLO12n offline. Tests whose framework isn't installed are skipped.

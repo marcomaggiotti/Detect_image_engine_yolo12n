@@ -134,7 +134,8 @@ def test_no_admin_token_configured_allows_changes(detector, embedder):
 
 @pytest.mark.parametrize("name", ["Luna", "a" * 33, "-luna", "luna%2F..", "lu na"])
 def test_invalid_names(client, name):
-    assert enroll(client, name, RED).status_code in (400, 404)
+    # 404/405: a name with a "/" matches no API route (405 once the web interface is built).
+    assert enroll(client, name, RED).status_code in (400, 404, 405)
 
 
 def test_delete_cat(client):
@@ -182,6 +183,17 @@ def test_unwritable_cats_dir_falls_back_to_memory(tmp_path, embedder, caplog):
     assert gallery.root is None
     assert "will be lost on restart" in caplog.text
     assert gallery.add("luna", [Image.new("RGB", (9, 9))]) == 1
+
+
+def test_cat_photo(tmp_path, detector, embedder):
+    with make_client(detector, embedder, cats_dir=str(tmp_path)) as c:
+        enroll(c, "luna", RED)
+        res = c.get("/v1/cats/luna/photo")
+        assert res.status_code == 200 and res.headers["content-type"] == "image/jpeg"
+        assert c.get("/v1/cats/milo/photo").status_code == 404
+    with make_client(detector, embedder) as c:  # memory only: nothing stored
+        enroll(c, "luna", RED)
+        assert c.get("/v1/cats/luna/photo").status_code == 404
 
 
 def test_fingerprints_recomputed_for_a_new_embedder(tmp_path, embedder):

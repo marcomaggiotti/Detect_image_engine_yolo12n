@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     # Unset lets anyone who can reach the service change them.
     admin_token: SecretStr | None = None
 
+    # --- Web interface ------------------------------------------------------
+    # Built React app (frontend/, "npm run build") served at "/". Defaults to
+    # app/web when it exists; the API works without it.
+    web_dir: str | None = None
+
     # --- Input limits ------------------------------------------------------
     max_upload_bytes: int = Field(10 * 1024 * 1024, gt=0)
     max_image_pixels: int = Field(40_000_000, gt=0)

@@ -184,6 +184,14 @@ class CatGallery:
             self._vectors[name] = photos
             return len(new)
 
+    def photo(self, name: str) -> Path | None:
+        """One stored photo of a cat (to show it), or None (unknown cat, memory-only)."""
+        validate_name(name)
+        with self._lock:
+            if name not in self._vectors or not self.root:
+                return None
+            return next(iter(sorted((self.root / name).glob("*.jpg"))), None)
+
     def remove(self, name: str) -> bool:
         validate_name(name)
         with self._lock:

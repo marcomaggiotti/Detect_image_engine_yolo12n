@@ -145,3 +145,18 @@ def test_custom_backend_loaded_from_settings(png):
     with TestClient(create_app(settings)) as c:
         assert c.get("/v1/model").json()["backend"] == "fake"
         assert post(c, png).json()["counts"] == {"cat": 2}
+
+
+def test_serves_web_interface(tmp_path, detector, png):
+    (tmp_path / "index.html").write_text("<!doctype html><title>Cats</title>")
+    settings = Settings(_env_file=None, warmup=False, web_dir=str(tmp_path))
+    with TestClient(create_app(settings, detector=detector)) as c:
+        assert "<title>Cats</title>" in c.get("/").text
+        assert c.get("/health").json() == {"status": "ok"}  # API routes still win
+        assert post(c, png).status_code == 200
+
+
+def test_no_web_interface_without_build(tmp_path, detector):
+    settings = Settings(_env_file=None, warmup=False, web_dir=str(tmp_path))
+    with TestClient(create_app(settings, detector=detector)) as c:
+        assert c.get("/").status_code == 404

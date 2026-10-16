@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app import __doc__ as description
 from app.api.routes import router
@@ -87,7 +89,17 @@ def create_app(
     )
     app.include_router(router)
     _show_file_pickers_for_file_lists(app)
+    _serve_web_interface(app, settings)
     return app
+
+
+def _serve_web_interface(app: FastAPI, settings: Settings) -> None:
+    """Serve the built React app at "/" (after the API routes, which take precedence)."""
+    web_dir = Path(settings.web_dir) if settings.web_dir else Path(__file__).parent / "web"
+    if (web_dir / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
+    elif settings.web_dir:
+        logger.warning("No web interface in %s (run npm run build in frontend/)", web_dir)
 
 
 def _show_file_pickers_for_file_lists(app: FastAPI) -> None:

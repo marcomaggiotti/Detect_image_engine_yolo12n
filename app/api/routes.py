@@ -15,6 +15,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from starlette.concurrency import run_in_threadpool
 
@@ -281,6 +282,31 @@ def list_cats(request: Request) -> CatsResponse:
         threshold=gallery.threshold,
         persistent=gallery.root is not None,
     )
+
+
+@router.get(
+    "/v1/cats/{name}/photo",
+    response_class=FileResponse,
+    tags=["your cats"],
+    responses={
+        200: {"content": {"image/jpeg": {}}, "description": "A photo of this cat"},
+        404: {"model": ErrorResponse, "description": "Unknown cat, or photos not stored"},
+    },
+)
+def cat_photo(request: Request, name: CatName) -> FileResponse:
+    """One photo of this cat (the cropped cat), e.g. for an avatar."""
+    gallery = _service(request).gallery
+    if gallery is None:
+        raise _identification_errors(
+            IdentificationDisabledError("Telling cats apart is not configured")
+        )
+    try:
+        path = gallery.photo(name)
+    except InvalidCatNameError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    if path is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No stored photo of {name!r}")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-cache"})
 
 
 @router.post(
