@@ -1,5 +1,5 @@
 import type { CatsResponse, EnrollResponse } from "../api";
-import type { CheckResult } from "../results";
+import type { CheckResult, Scale } from "../results";
 
 export type StepStatus = "running" | "done" | "failed";
 
@@ -28,7 +28,8 @@ export type AssistantMessage = {
   text?: string;
   /** Smaller text under the main answer. */
   note?: string;
-  check?: { photo: Photo; result: CheckResult };
+  /** A checked photo: ``photo`` is what was uploaded, ``original`` what was chosen. */
+  check?: { photo: Photo; original: Photo; scale: Scale; result: CheckResult; checkedAt: number };
   cats?: CatsResponse;
   report?: EnrollResponse;
   actions?: Action[];
@@ -37,6 +38,8 @@ export type AssistantMessage = {
   /** Asks for a new cat's name inline, to save this photo. */
   askName?: Photo;
   failed?: boolean;
+  /** A photo check still in progress. */
+  checking?: boolean;
 };
 
 export type Message = UserMessage | AssistantMessage;

@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAgent } from "./agent/useAgent";
 import { Chat } from "./components/Chat";
+import { Detections } from "./components/Detections";
 import { displayName, listNames } from "./results";
 
 const TOKEN_KEY = "cat-detector.admin-token";
+
+type Tab = "assistant" | "detections";
+const tabFromHash = (): Tab => (window.location.hash === "#detections" ? "detections" : "assistant");
 
 // The token is a per-device convenience; storage may be unavailable (private mode).
 function loadToken(): string {
@@ -31,6 +35,13 @@ export function App() {
   };
   const agent = useAgent({ token, setToken });
   const known = agent.cats?.cats.map((c) => displayName(c.name)) ?? [];
+  const [tab, setTab] = useState<Tab>(tabFromHash);
+  useEffect(() => {
+    const onHash = () => setTab(tabFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  const detections = agent.messages.reduce((n, m) => n + (m.role === "assistant" && m.check ? m.check.result.findings.length : 0), 0);
 
   return (
     <div className="app">
@@ -62,7 +73,23 @@ export function App() {
           <a href="/docs">API</a>
         </nav>
       </header>
-      <Chat agent={agent} />
+      <nav className="tabs" aria-label="Views">
+        <a href="#assistant" className={`tabs__tab${tab === "assistant" ? " tabs__tab--active" : ""}`} aria-current={tab === "assistant" ? "page" : undefined}>
+          Assistant
+        </a>
+        <a href="#detections" className={`tabs__tab${tab === "detections" ? " tabs__tab--active" : ""}`} aria-current={tab === "detections" ? "page" : undefined}>
+          Detections{detections > 0 && <span className="badge">{detections}</span>}
+        </a>
+      </nav>
+      {/* The chat stays mounted so its draft and scroll survive switching tabs. */}
+      <div className="view" hidden={tab !== "assistant"}>
+        <Chat agent={agent} />
+      </div>
+      {tab === "detections" && (
+        <div className="view view--scroll">
+          <Detections messages={agent.messages} onCheck={(files) => agent.send("", files)} />
+        </div>
+      )}
     </div>
   );
 }

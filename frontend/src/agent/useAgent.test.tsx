@@ -16,7 +16,7 @@ function fakeApi(cats: CatsResponse["cats"] = [{ name: "luna", photos: 5 }]): Ag
   const known = [...cats];
   return {
     known,
-    prepareImage: async (file) => file,
+    prepareImage: async (file) => ({ file, scaleX: 1, scaleY: 1 }),
     listCats: vi.fn(async () => ({ cats: [...known], threshold: 0.8, persistent: true })),
     detectCats: vi.fn(async () => ({ image: { width: 100, height: 100 }, found: true, counts: { cat: 1 }, detections: [{ label: "cat", class_id: 15, confidence: 0.9, box }], inference_ms: 200 })),
     identify: vi.fn(async () => ({

@@ -76,3 +76,23 @@ export function summarize(findings: Finding[]): { headline: string; found: boole
 export function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
+
+/** Original pixels per uploaded pixel, on each axis (1 when the photo wasn't shrunk). */
+export type Scale = { x: number; y: number };
+
+/** Size of the original photo, from the size the server saw. */
+export function originalSize(image: ImageInfo, scale: Scale): ImageInfo {
+  return { width: Math.round(image.width * scale.x), height: Math.round(image.height * scale.y) };
+}
+
+/** A box from the server, in pixels of the original photo (upright, full size). */
+export function toOriginal(box: Box, scale: Scale, size: ImageInfo): Box {
+  const clamp = (value: number, max: number) => Math.round(Math.min(Math.max(value, 0), max) * 10) / 10;
+  return {
+    x1: clamp(box.x1 * scale.x, size.width),
+    y1: clamp(box.y1 * scale.y, size.height),
+    x2: clamp(box.x2 * scale.x, size.width),
+    y2: clamp(box.y2 * scale.y, size.height),
+  };
+}
+

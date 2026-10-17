@@ -49,6 +49,24 @@ Open the service's address in a browser (http://localhost:8000/ locally, your Re
 - **Ask:** “show my cats”, “forget Luna” (it asks before forgetting), “help”.
 - **Admin token:** when a change needs `DETECT_ADMIN_TOKEN`, the assistant asks for it in the conversation, keeps it in that browser and carries on with what you asked.
 
+The **Detections** tab lists every cat found in the photos checked so far (newest photo first), each with:
+
+- the cropped cat, cut from the full-size original photo, with **Download crop**;
+- its box in **pixels of the original photo**: `x1, y1` (top-left corner) and `x2, y2` (bottom-right), x to the right and y down from the photo's top-left corner, plus its width × height;
+- **Copy JSON** / **Download JSON** per photo, e.g.:
+
+```json
+{
+  "file": "IMG_2041.jpg", "width": 4000, "height": 3000,
+  "detections": [
+    {"index": 1, "label": "cat", "name": "luna", "confidence": 0.91, "similarity": 0.96, "closest": "luna",
+     "box": {"x1": 31, "y1": 75.3, "x2": 802, "y2": 1220.1}, "width": 771, "height": 1144.8}
+  ]
+}
+```
+
+“Original photo” means the photo as you see it: full size, and upright (the camera's rotation flag applied). The page shrinks large photos before upload, so the server's boxes are in the smaller copy's pixels; the tab scales them back. In a test with a 4000×3000 photo uploaded at 1,600 px, they matched the server's boxes on the full-size photo within 2 pixels, also for a copy stored sideways with a rotation flag.
+
 The assistant understands photos and these few requests by simple pattern matching ([`frontend/src/agent/intent.ts`](frontend/src/agent/intent.ts)). There is no language model: nothing extra to pay or configure.
 
 Large photos are shrunk to 1,600 px in the browser before upload, which keeps uploads from phones fast. HEIC photos are sent as they are: the server reads them, but browsers other than Safari can't show their preview.

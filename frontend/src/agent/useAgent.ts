@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import * as realApi from "../api";
 import { ApiError, CAT_NAME, toCatName, type CatsResponse } from "../api";
-import { prepareImage as realPrepareImage } from "../image";
+import { prepareImage as realPrepareImage, type PreparedImage } from "../image";
 import { displayName, fromDetect, fromIdentify, listNames, percent, summarize, type CheckResult } from "../results";
 import { parseIntent } from "./intent";
 import type { Action, AssistantMessage, Message, Photo, Step } from "./types";
 
 /** What the assistant can call; replaced by fakes in tests. */
 export type AgentApi = Pick<typeof realApi, "detectCats" | "identify" | "listCats" | "addPhotos" | "deleteCat"> & {
-  prepareImage: (file: File) => Promise<File>;
+  prepareImage: (file: File) => Promise<PreparedImage>;
 };
 
 const defaultApi: AgentApi = { ...realApi, prepareImage: realPrepareImage };
@@ -98,8 +98,9 @@ export function useAgent({ token, setToken, api = defaultApi }: Options) {
   }
 
   async function checkPhoto(original: Photo) {
-    const id = add({ role: "assistant", steps: [{ label: "Preparing the photo", status: "running" }] });
-    const file = await api.prepareImage(original.file);
+    const id = add({ role: "assistant", steps: [{ label: "Preparing the photo", status: "running" }], checking: true });
+    const prepared = await api.prepareImage(original.file);
+    const file = prepared.file;
     const photo = file === original.file ? original : { file, url: URL.createObjectURL(file) };
     setStep(id, 0, { label: "Preparing the photo", status: "done", detail: file === original.file ? kb(file) : `resized, ${kb(file)}` });
 
@@ -114,7 +115,7 @@ export function useAgent({ token, setToken, api = defaultApi }: Options) {
       result = withNames ? fromIdentify(await api.identify(file)) : fromDetect(await api.detectCats(file));
     } catch (error) {
       setStep(id, 1, { label: "Looking for cats", status: "failed", detail: "error" });
-      update(id, { failed: true, text: (error as Error).message, actions: [CHECK_ANOTHER] });
+      update(id, { failed: true, checking: false, text: (error as Error).message, actions: [CHECK_ANOTHER] });
       return;
     }
 
@@ -154,8 +155,9 @@ export function useAgent({ token, setToken, api = defaultApi }: Options) {
 
     update(id, {
       steps,
+      checking: false,
       text: summarize(result.findings).headline,
-      check: { photo, result },
+      check: { photo, original, scale: { x: prepared.scaleX, y: prepared.scaleY }, result, checkedAt: Date.now() },
       note: [note, `Checked in ${(result.ms / 1000).toFixed(1)} s on the server.`].filter(Boolean).join(" "),
       actions,
     });
@@ -170,7 +172,7 @@ export function useAgent({ token, setToken, api = defaultApi }: Options) {
     const who = displayName(name);
     const first: Step = { label: `Preparing ${photos.length === 1 ? "the photo" : `${photos.length} photos`}`, status: "running" };
     const id = add({ role: "assistant", steps: [first] });
-    const files = await Promise.all(photos.map((p) => api.prepareImage(p.file)));
+    const files = (await Promise.all(photos.map((p) => api.prepareImage(p.file)))).map((p) => p.file);
     setStep(id, 0, { ...first, status: "done" });
     const finding: Step = { label: `Finding the cat in ${photos.length === 1 ? "the photo" : "each photo"} and saving ${who}`, status: "running" };
     setStep(id, 1, finding);

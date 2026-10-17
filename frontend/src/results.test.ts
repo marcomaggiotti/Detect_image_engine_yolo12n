@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayName, fromDetect, fromIdentify, summarize, type Finding } from "./results";
+import { displayName, fromDetect, fromIdentify, originalSize, summarize, toOriginal, type Finding } from "./results";
 
 const box = { x1: 0, y1: 0, x2: 10, y2: 10 };
 const cat = (title: string, known: boolean | null): Finding => ({ box, title, known, confidence: 0.9 });
@@ -53,3 +53,24 @@ describe("results", () => {
     expect(displayName("big_tom-2")).toBe("Big tom 2");
   });
 });
+
+describe("coordinates in the original photo", () => {
+  it("scales boxes from the uploaded photo back to the original", () => {
+    // A 4000x3000 photo uploaded as 1600x1200.
+    const scale = { x: 2.5, y: 2.5 };
+    const size = originalSize({ width: 1600, height: 1200 }, scale);
+    expect(size).toEqual({ width: 4000, height: 3000 });
+    expect(toOriginal({ x1: 12.4, y1: 30.1, x2: 320.8, y2: 488.04 }, scale, size)).toEqual({
+      x1: 31,
+      y1: 75.3,
+      x2: 802,
+      y2: 1220.1,
+    });
+  });
+
+  it("keeps boxes inside the photo and leaves unshrunk photos as they are", () => {
+    const size = { width: 640, height: 480 };
+    expect(toOriginal({ x1: -0.4, y1: 0, x2: 640.2, y2: 300 }, { x: 1, y: 1 }, size)).toEqual({ x1: 0, y1: 0, x2: 640, y2: 300 });
+  });
+});
+
