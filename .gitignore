@@ -218,7 +218,3 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-
-# Web interface: dependencies and build output (built in Docker, or npm run build)
-frontend/node_modules/
-app/web/

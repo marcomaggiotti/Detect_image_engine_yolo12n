@@ -8,7 +8,7 @@ It follows the design of [`detect_image_engine`](https://github.com/marcomaggiot
 - **Other objects:** people, dogs and the rest of COCO's 80 classes are a request parameter or a config change away. No code changes.
 - **Swappable model:** the weights come from configuration. A fine-tuned YOLO12 `best.pt` (or YOLO11, RT-DETR, a custom backend) is a drop-in replacement.
 - **Your own cats by name:** upload a few photos of each of your cats, then `POST /v1/identify` tells you which of them is in a picture. No training needed.
-- **Chat-style web interface:** a cat assistant at `/` (React). Send it photos, from a phone too, and it shows each step, answers, and learns your cats when you say “this is Luna”. Served by the same service.
+- **Web app:** [image_detector_manager](https://github.com/marcomaggiotti/image_detector_manager), a separate repository, is a chat-style cat assistant and a list of detections built on this API. See [Web app](#web-app).
 - **Small in production:** the Docker image serves ONNX exports with ONNX Runtime, without PyTorch. It peaks at ~200 MB of RAM, so it runs on Render's $7/month Starter plan.
 
 ```
@@ -40,45 +40,11 @@ uvicorn app.main:app --reload
 
 The first start downloads `yolo12n.pt` (~5 MB). Interactive docs: http://localhost:8000/docs
 
-## Web interface
+## Web app
 
-Open the service's address in a browser (http://localhost:8000/ locally, your Render URL in production). It's a conversation with a cat assistant:
+The web app lives in its own repository, [image_detector_manager](https://github.com/marcomaggiotti/image_detector_manager): a chat-style cat assistant (send a photo, teach it your cats) and a Detections tab with each cat cropped and its box in pixels of the original photo. It is a static site that calls this API from the browser.
 
-- **Send a photo** (choose, take one on a phone, drop or paste it). The assistant shows each step as it works (preparing the photo, looking for cats, comparing them with your cats), then answers: “It's Luna!”, “Yes, 2 cats!”, or “A cat, but not one of yours”, with a box around each cat.
-- **Teach it your cats:** send photos of one cat with “this is Luna” (or “save as Luna”, “these are Luna”). After checking a photo it also offers buttons: “It's Luna”, “It's a new cat…”, “Add to Luna's photos”.
-- **Ask:** “show my cats”, “forget Luna” (it asks before forgetting), “help”.
-- **Admin token:** when a change needs `DETECT_ADMIN_TOKEN`, the assistant asks for it in the conversation, keeps it in that browser and carries on with what you asked.
-
-The **Detections** tab lists every cat found in the photos checked so far (newest photo first), each with:
-
-- the cropped cat, cut from the full-size original photo, with **Download crop**;
-- its box in **pixels of the original photo**: `x1, y1` (top-left corner) and `x2, y2` (bottom-right), x to the right and y down from the photo's top-left corner, plus its width × height;
-- **Copy JSON** / **Download JSON** per photo, e.g.:
-
-```json
-{
-  "file": "IMG_2041.jpg", "width": 4000, "height": 3000,
-  "detections": [
-    {"index": 1, "label": "cat", "name": "luna", "confidence": 0.91, "similarity": 0.96, "closest": "luna",
-     "box": {"x1": 31, "y1": 75.3, "x2": 802, "y2": 1220.1}, "width": 771, "height": 1144.8}
-  ]
-}
-```
-
-“Original photo” means the photo as you see it: full size, and upright (the camera's rotation flag applied). The page shrinks large photos before upload, so the server's boxes are in the smaller copy's pixels; the tab scales them back. In a test with a 4000×3000 photo uploaded at 1,600 px, they matched the server's boxes on the full-size photo within 2 pixels, also for a copy stored sideways with a rotation flag.
-
-The assistant understands photos and these few requests by simple pattern matching ([`frontend/src/agent/intent.ts`](frontend/src/agent/intent.ts)). There is no language model: nothing extra to pay or configure.
-
-Large photos are shrunk to 1,600 px in the browser before upload, which keeps uploads from phones fast. HEIC photos are sent as they are: the server reads them, but browsers other than Safari can't show their preview.
-
-The app lives in [`frontend/`](frontend) (React 18, TypeScript, Vite). The Docker image builds it; to run it locally:
-
-```bash
-cd frontend
-npm install
-npm run build        # into app/web, served by uvicorn at "/"
-# or, while editing: npm run dev  (http://localhost:5173, API calls go to uvicorn on :8000)
-```
+Because the app is on a different address, the API must allow it (CORS): set `DETECT_CORS_ORIGINS` to the app's address, e.g. `https://image-detector-manager.onrender.com` (comma separated for several; `render.yaml` sets it). The app, in turn, is built with `VITE_API_URL` set to this API's address. For local development, run the app with `npm run dev`: it forwards API calls to http://localhost:8000, so no CORS setting is needed.
 
 ### Is there a cat?
 
@@ -205,7 +171,7 @@ Everything is set with environment variables (or a `.env` file). See [`.env.exam
 | `DETECT_EMBEDDER_WEIGHTS` | – (`/models/cat-embedder.onnx` in Docker) | Embedder from `training/export_embedder.py`. Unset disables `/v1/identify` and `/v1/cats` |
 | `DETECT_CATS_DIR` | – (`/var/data/cats` in Docker) | Where photos of your cats are kept. Unset: memory only, lost on restart |
 | `DETECT_IDENTIFY_THRESHOLD` | `0.8` | Minimum similarity to name one of your cats |
-| `DETECT_WEB_DIR` | `app/web` (`/app/web` in Docker) | Built web interface served at `/`. Without one, `/` returns 404 and the API works as before |
+| `DETECT_CORS_ORIGINS` | – | Web app addresses allowed to call the API from a browser, comma separated (`*` for any), e.g. `https://image-detector-manager.onrender.com` |
 | `DETECT_ADMIN_TOKEN` | – | Required to add or delete cats. Unset: anyone who can reach the service can (a warning is logged) |
 
 At startup the service checks that the model can detect every class in `DETECT_TARGET_CLASSES`. If it can't, startup fails with a clear error instead of returning empty results.
@@ -327,7 +293,7 @@ docker run -p 8000:8000 -v "$PWD/runs/pets-v1/weights:/models/custom:ro" \
   detect-image-engine-yolo12n
 ```
 
-The build has three stages. The first builds the web interface with Node. The second installs CPU PyTorch and Ultralytics only to export YOLO12n and the embedder to ONNX (`--build-arg MODEL=yolo12s.pt` or `EMBEDDER=yolo11s-cls.pt` pick others). The final image contains ONNX Runtime, the two `.onnx` files and the built web interface, without Node or PyTorch (498 MB). The `cat-photos` volume keeps your cats' photos across restarts.
+The build has two stages. The first installs CPU PyTorch and Ultralytics only to export YOLO12n and the embedder to ONNX (`--build-arg MODEL=yolo12s.pt` or `EMBEDDER=yolo11s-cls.pt` pick others). The final image contains ONNX Runtime and the two `.onnx` files, without PyTorch. The `cat-photos` volume keeps your cats' photos across restarts.
 
 Limited to 512 MB of RAM and half a CPU, the container peaked at 200 MB. `/v1/cat` took about 0.2 s per image and `/v1/identify` about 0.4 s (it runs both models).
 
@@ -340,6 +306,7 @@ The repo includes a Render Blueprint, [`render.yaml`](render.yaml). In the Rende
 - **Plan:** `starter` (512 MB, 0.5 CPU). The image peaks at about 200 MB, and `DETECT_THREADS=1` matches the half CPU. Expect about 0.2 s for `/v1/cat` and 0.4 s for `/v1/identify`. For more, move to `standard` (1 CPU) with `DETECT_THREADS=2`.
 - **Disk:** a 1 GB persistent disk at `/var/data` keeps your cats' photos across deploys. It is billed separately (about $0.25/GB per month, per a third-party price list; check Render's pricing). Render may limit a service with a disk to a single instance and to deploys with a short downtime; check their docs if that matters. Without the disk, delete the `disk` block: the photos are then lost on every deploy.
 - **Admin token:** Render generates `DETECT_ADMIN_TOKEN`. Copy it from the service's **Environment** tab to add or delete cats.
+- **Web app:** `DETECT_CORS_ORIGINS` is set to `https://image-detector-manager.onrender.com`, the address Render gives the [image_detector_manager](https://github.com/marcomaggiotti/image_detector_manager) static site. If Render gives either service another address (the name was taken, or you renamed it), update `DETECT_CORS_ORIGINS` here and `VITE_API_URL` there.
 - **Free plan:** with a tenth of a CPU each image takes over a second, and the service sleeps when idle, so the next request waits for it to start.
 - **Region:** `oregon`. Change `region` in `render.yaml` to deploy elsewhere.
 - **Fine-tuned model:** Render's filesystem is reset on every deploy. Export it to ONNX, then either copy the `.onnx` into the image, or upload it to the disk and set `DETECT_MODEL_WEIGHTS=/var/data/models/best.onnx`.
@@ -351,8 +318,6 @@ The repo includes a Render Blueprint, [`render.yaml`](render.yaml). In the Rende
 pip install -e ".[ultralytics,onnx,export,dev]"
 pytest
 ruff check . && ruff format --check .
-
-cd frontend && npm install && npm test && npm run typecheck
 ```
 
 The API tests use a fake detector and a fake embedder, so they need no ML framework. The ONNX Runtime tests build tiny ONNX models with known outputs (they need `onnx` and `onnxruntime`). The ultralytics smoke test builds a randomly initialised YOLO12n offline. Tests whose framework isn't installed are skipped.

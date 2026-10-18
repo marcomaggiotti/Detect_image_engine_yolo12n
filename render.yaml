@@ -29,6 +29,10 @@ services:
       # cats. Render generates it: copy it from the dashboard's Environment tab.
       - key: DETECT_ADMIN_TOKEN
         generateValue: true
+      # The web app (image_detector_manager) calls the API from the browser,
+      # so its address must be allowed here. Comma separated for several.
+      - key: DETECT_CORS_ORIGINS
+        value: https://image-detector-manager.onrender.com
       # Minimum similarity to name one of your cats (see README).
       - key: DETECT_IDENTIFY_THRESHOLD
         value: "0.8"
