@@ -20,8 +20,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# YOLO12 support was added in ultralytics 8.3.78.
+# Backend extras: install only the one you deploy.
+# onnx: serve an exported .onnx model without PyTorch (Docker image, Render).
+onnx = ["onnxruntime>=1.17", "pi-heif>=0.18"]
+# ultralytics: serve .pt weights and fine-tune. YOLO12 needs ultralytics 8.3.78+.
 ultralytics = ["ultralytics>=8.3.78", "pi-heif>=0.18"]
+# export: training/export.py, .pt -> .onnx
+export = ["ultralytics>=8.3.78", "onnx>=1.12", "onnxslim>=0.1.82"]
 dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.5"]
 
 [tool.setuptools.packages.find]

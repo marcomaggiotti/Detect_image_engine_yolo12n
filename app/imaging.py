@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import io
 
+import numpy as np
 from PIL import Image, ImageOps, UnidentifiedImageError
+
+try:  # HEIC/HEIF photos (iPhone default), when pi-heif is installed
+    from pi_heif import register_heif_opener
+except ImportError:
+    pass
+else:
+    register_heif_opener()
 
 
 class InvalidImageError(ValueError):
@@ -39,3 +47,22 @@ def decode_image(data: bytes, *, max_pixels: int) -> Image.Image:
         ImportError,
     ) as exc:
         raise InvalidImageError("Unsupported or corrupt image") from exc
+
+
+def resize_bilinear(pixels: np.ndarray, width: int, height: int) -> np.ndarray:
+    """Resize an HxWx3 uint8 array like OpenCV's INTER_LINEAR, which the
+    models were trained with. Pillow's bilinear filter smooths when shrinking,
+    which shifts scores enough to create false positives on large photos."""
+    if pixels.shape[:2] == (height, width):
+        return pixels.astype(np.float32)
+    y0, y1, wy = _sample_coords(pixels.shape[0], height)
+    x0, x1, wx = _sample_coords(pixels.shape[1], width)
+    rows = pixels[y0] * (1 - wy)[:, None, None] + pixels[y1] * wy[:, None, None]
+    out = rows[:, x0] * (1 - wx)[None, :, None] + rows[:, x1] * wx[None, :, None]
+    return out.round()  # OpenCV returns uint8
+
+
+def _sample_coords(size: int, new_size: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    src = ((np.arange(new_size) + 0.5) * (size / new_size) - 0.5).clip(0, size - 1)
+    low = np.floor(src).astype(int)
+    return low, np.minimum(low + 1, size - 1), (src - low).astype(np.float32)

@@ -27,6 +27,11 @@ class UltralyticsDetector(Detector):
         os.environ.setdefault("YOLO_AUTOINSTALL", "false")
         from ultralytics import RTDETR, YOLO
 
+        if config.threads:
+            import torch
+
+            torch.set_num_threads(config.threads)
+
         arch = (config.arch or "yolo").lower()
         if arch == "rtdetr":
             self._model = RTDETR(config.weights)

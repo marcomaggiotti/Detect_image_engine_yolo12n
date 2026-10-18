@@ -32,6 +32,19 @@ def test_builtin_backend_is_detector():
     assert issubclass(resolve_backend("ultralytics"), Detector)
 
 
+def test_onnxruntime_backend_is_registered():
+    pytest.importorskip("onnxruntime")
+    assert resolve_backend("onnxruntime").backend_name == "onnxruntime"
+
+
+def test_onnx_settings_from_env(monkeypatch):
+    monkeypatch.setenv("DETECT_ONNX_PROVIDERS", "CUDAExecutionProvider, CPUExecutionProvider")
+    monkeypatch.setenv("DETECT_THREADS", "2")
+    settings = Settings(_env_file=None)
+    assert settings.onnx_providers == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    assert settings.threads == 2
+
+
 def test_default_model_is_yolo12n(monkeypatch):
     monkeypatch.delenv("DETECT_MODEL_WEIGHTS", raising=False)
     settings = Settings(_env_file=None)

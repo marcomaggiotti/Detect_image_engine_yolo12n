@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -18,12 +18,14 @@ class Settings(BaseSettings):
     )
 
     # --- Model selection -------------------------------------------------
-    # Built-in name ("ultralytics") or a custom detector given as
-    # "package.module:ClassName".
+    # Built-in name ("ultralytics", "onnxruntime") or a custom detector given
+    # as "package.module:ClassName". "onnxruntime" serves an exported .onnx
+    # model without PyTorch (see training/export.py); the Docker image uses it.
     backend: str = "ultralytics"
-    # Weights to load: a .pt/.onnx/... file or a known Ultralytics model name.
+    # Weights to load. ultralytics: a .pt/.onnx/... file or a known model name.
+    # onnxruntime: a .onnx file exported by Ultralytics.
     # Defaults to YOLO12 nano pretrained on COCO (80 classes, "cat" included).
-    # Point it at a fine-tuned "best.pt" to serve your own model.
+    # Point it at a fine-tuned "best.pt" (or its ONNX export) to serve your own model.
     model_weights: str = "yolo12n.pt"
     # Architecture hint: "yolo" (default) or "rtdetr".
     model_arch: str | None = None
@@ -34,6 +36,13 @@ class Settings(BaseSettings):
     model_version: str | None = None
     # "cpu", "cuda", "cuda:0", "mps"... None lets the backend decide.
     device: str | None = None
+    # CPU threads used by one inference. None lets the runtime decide (all
+    # cores of the host, which oversubscribes small cloud instances).
+    threads: int | None = Field(None, gt=0)
+    # onnxruntime backend only: execution providers in priority order, comma
+    # separated, e.g. "CUDAExecutionProvider,CPUExecutionProvider". Empty means
+    # derived from DETECT_DEVICE.
+    onnx_providers: Annotated[list[str], NoDecode] = []
 
     # --- Detection defaults ----------------------------------------------
     # Classes reported when the request does not ask for specific ones.
@@ -45,6 +54,24 @@ class Settings(BaseSettings):
     image_size: int = Field(640, gt=0)
     max_detections: int = Field(100, gt=0)
 
+    # --- Telling your cats apart ------------------------------------------
+    # Embedder exported by training/export_embedder.py. Unset disables the
+    # /v1/identify and /v1/cats endpoints.
+    embedder_weights: str | None = None
+    # Where the photos of your cats are kept. Unset keeps them in memory only
+    # (lost on restart); on Render, point it at a persistent disk.
+    cats_dir: str | None = None
+    # Minimum similarity (0-1) to name a cat; below it the cat is "unknown".
+    identify_threshold: float = Field(0.8, ge=0.0, le=1.0)
+    # Required as "Authorization: Bearer <token>" to add or delete cats.
+    # Unset lets anyone who can reach the service change them.
+    admin_token: SecretStr | None = None
+
+    # --- Web interface ------------------------------------------------------
+    # Built React app (frontend/, "npm run build") served at "/". Defaults to
+    # app/web when it exists; the API works without it.
+    web_dir: str | None = None
+
     # --- Input limits ------------------------------------------------------
     max_upload_bytes: int = Field(10 * 1024 * 1024, gt=0)
     max_image_pixels: int = Field(40_000_000, gt=0)
@@ -53,7 +80,7 @@ class Settings(BaseSettings):
     # does not pay for lazy initialisation.
     warmup: bool = True
 
-    @field_validator("target_classes", mode="before")
+    @field_validator("target_classes", "onnx_providers", mode="before")
     @classmethod
     def _split_classes(cls, value: object) -> object:
         if isinstance(value, str):

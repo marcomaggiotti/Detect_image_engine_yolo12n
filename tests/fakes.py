@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Collection
 
+import numpy as np
 from PIL import Image
 
 from app.detectors import Detection, Detector, DetectorConfig
@@ -21,6 +22,7 @@ class FakeDetector(Detector):
     def __init__(self, config: DetectorConfig | None = None) -> None:
         super().__init__(config or DetectorConfig(weights="fake.pt"))
         self.calls: list[dict] = []
+        self.scene = list(self.SCENE)
 
     @property
     def labels(self) -> dict[int, str]:
@@ -36,9 +38,23 @@ class FakeDetector(Detector):
         self.calls.append({"size": image.size, "confidence": confidence, "class_ids": class_ids})
         return [
             d
-            for d in self.SCENE
+            for d in self.scene
             if d.confidence >= confidence and (class_ids is None or d.class_id in class_ids)
         ]
+
+
+class FakeEmbedder:
+    """Fingerprint = average colour, so differently coloured images are different cats."""
+
+    signature = "fake"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def embed(self, crops: list[Image.Image]) -> np.ndarray:
+        self.calls += 1
+        vectors = np.array([np.asarray(c.convert("RGB"), float).mean((0, 1)) for c in crops])
+        return vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
 
 
 class NotADetector:
