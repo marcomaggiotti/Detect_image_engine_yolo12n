@@ -67,10 +67,11 @@ class Settings(BaseSettings):
     # Unset lets anyone who can reach the service change them.
     admin_token: SecretStr | None = None
 
-    # --- Web interface ------------------------------------------------------
-    # Built React app (frontend/, "npm run build") served at "/". Defaults to
-    # app/web when it exists; the API works without it.
-    web_dir: str | None = None
+    # --- Browser access ---------------------------------------------------
+    # Addresses of web apps allowed to call the API from a browser (CORS),
+    # comma separated, e.g. https://image-detector-manager.onrender.com.
+    # "*" allows any. Empty: none (calls from servers and curl always work).
+    cors_origins: Annotated[list[str], NoDecode] = []
 
     # --- Input limits ------------------------------------------------------
     max_upload_bytes: int = Field(10 * 1024 * 1024, gt=0)
@@ -80,7 +81,7 @@ class Settings(BaseSettings):
     # does not pay for lazy initialisation.
     warmup: bool = True
 
-    @field_validator("target_classes", "onnx_providers", mode="before")
+    @field_validator("target_classes", "onnx_providers", "cors_origins", mode="before")
     @classmethod
     def _split_classes(cls, value: object) -> object:
         if isinstance(value, str):

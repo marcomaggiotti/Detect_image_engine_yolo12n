@@ -134,8 +134,7 @@ def test_no_admin_token_configured_allows_changes(detector, embedder):
 
 @pytest.mark.parametrize("name", ["Luna", "a" * 33, "-luna", "luna%2F..", "lu na"])
 def test_invalid_names(client, name):
-    # 404/405: a name with a "/" matches no API route (405 once the web interface is built).
-    assert enroll(client, name, RED).status_code in (400, 404, 405)
+    assert enroll(client, name, RED).status_code in (400, 404)
 
 
 def test_delete_cat(client):

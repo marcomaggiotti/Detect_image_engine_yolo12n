@@ -11,5 +11,3 @@ models
 *.pt
 *.onnx
 tests
-frontend/node_modules
-app/web

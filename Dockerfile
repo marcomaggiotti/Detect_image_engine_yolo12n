@@ -1,14 +1,7 @@
-# Three stages: Node builds the web interface, PyTorch + Ultralytics export
-# the models to ONNX. The runtime image serves both with ONNX Runtime, without
-# Node or PyTorch, so it fits in 512 MB of RAM (e.g. Render's Starter plan).
-
-# --- Stage 0: build the React web interface ------------------------------
-FROM node:22-slim AS web
-WORKDIR /frontend
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --no-audit --no-fund
-COPY frontend ./
-RUN npm run build -- --outDir /web --emptyOutDir
+# Two stages: PyTorch + Ultralytics are only needed to export the models to
+# ONNX. The runtime image serves them with ONNX Runtime, without PyTorch, so it
+# fits in 512 MB of RAM (e.g. Render's Starter plan). The web app lives in its
+# own repository, image_detector_manager.
 
 # --- Stage 1: export YOLO12n and the cat embedder to ONNX ---------------
 FROM python:3.12-slim AS export
@@ -53,9 +46,7 @@ RUN pip install ".[onnx]"
 # mount it (e.g. -v ./models:/models/custom) and set DETECT_MODEL_WEIGHTS.
 COPY --from=export /export/model.onnx /models/yolo12n.onnx
 COPY --from=export /export/cat-embedder.onnx /models/cat-embedder.onnx
-COPY --from=web /web /app/web
-ENV DETECT_WEB_DIR=/app/web \
-    DETECT_BACKEND=onnxruntime \
+ENV DETECT_BACKEND=onnxruntime \
     DETECT_MODEL_WEIGHTS=/models/yolo12n.onnx \
     DETECT_EMBEDDER_WEIGHTS=/models/cat-embedder.onnx \
     DETECT_CATS_DIR=/var/data/cats

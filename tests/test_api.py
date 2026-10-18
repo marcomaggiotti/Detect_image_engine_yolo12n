@@ -147,16 +147,34 @@ def test_custom_backend_loaded_from_settings(png):
         assert post(c, png).json()["counts"] == {"cat": 2}
 
 
-def test_serves_web_interface(tmp_path, detector, png):
-    (tmp_path / "index.html").write_text("<!doctype html><title>Cats</title>")
-    settings = Settings(_env_file=None, warmup=False, web_dir=str(tmp_path))
-    with TestClient(create_app(settings, detector=detector)) as c:
-        assert "<title>Cats</title>" in c.get("/").text
-        assert c.get("/health").json() == {"status": "ok"}  # API routes still win
-        assert post(c, png).status_code == 200
+APP = "https://image-detector-manager.onrender.com"
 
 
-def test_no_web_interface_without_build(tmp_path, detector):
-    settings = Settings(_env_file=None, warmup=False, web_dir=str(tmp_path))
+def test_cors_allows_configured_web_app(detector):
+    settings = Settings(_env_file=None, warmup=False, cors_origins=f"{APP}, http://localhost:5173")
     with TestClient(create_app(settings, detector=detector)) as c:
-        assert c.get("/").status_code == 404
+        preflight = c.options(
+            "/v1/cats/luna/photos",
+            headers={
+                "Origin": APP,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization",
+            },
+        )
+        assert preflight.status_code == 200
+        assert preflight.headers["access-control-allow-origin"] == APP
+        assert "authorization" in preflight.headers["access-control-allow-headers"].lower()
+        res = c.get("/health", headers={"Origin": APP})
+        assert res.headers["access-control-allow-origin"] == APP
+        other = c.get("/health", headers={"Origin": "https://evil.example"})
+        assert "access-control-allow-origin" not in other.headers
+
+
+def test_no_cors_by_default(client):
+    res = client.get("/health", headers={"Origin": APP})
+    assert "access-control-allow-origin" not in res.headers
+
+
+def test_cors_origins_from_env(monkeypatch):
+    monkeypatch.setenv("DETECT_CORS_ORIGINS", f"{APP} , http://localhost:5173")
+    assert Settings(_env_file=None).cors_origins == [APP, "http://localhost:5173"]
